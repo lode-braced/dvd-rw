@@ -1,0 +1,23 @@
+[project]
+name = "dvd-rw"
+version = "0.1.0"
+description = "Speed-optimized request recording and replaying for HTTPX"
+requires-python = ">=3.12"
+dependencies = [
+    "httpx>=0.28.1",
+    "pydantic>=2.11.7",
+    "uv-build>=0.8.5",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.5,<0.9.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "dvd_rw"
+module-root = ""
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.1",
+]
