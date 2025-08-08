@@ -56,34 +56,6 @@ python -m pip install pytest
 
 ## Quickstart
 
-### Record and replay programmatically
-
-```python
-from dvd_rw.models import DVD, Request, Response, Matcher
-
-# Configure the matchers to use for indexing and equality checks
-match_on = [Matcher.host, Matcher.method, Matcher.path, Matcher.query]
-
-dvd = DVD(
-    recorded_requests=[],
-    from_file=False,  # new in-memory recording
-    match_on=match_on,
-)
-
-# Construct request/response models directly
-req = Request(headers=[], method="GET", url="https://example.com/items?id=1")
-res = Response(status=200, headers=[("content-type", "application/json")], body=b"ok")
-
-# Record
-dvd.record_request(req, res)
-
-# Replay (each recorded pair is returned at most once by default)
-assert dvd.get_response(req) == res
-assert dvd.get_response(req) is None
-```
-
-### Persist to disk with DVDLoader
-
 ```python
 from dvd_rw.loader import DVDLoader
 from dvd_rw.models import Matcher
@@ -95,42 +67,13 @@ with DVDLoader(
 ) as dvd:
     # If the file did not exist yet, dvd.from_file will be False (recording allowed)
     # On subsequent runs when the file exists, dvd.from_file will be True (replay only)
+    # Do some requests here
     ...
 ```
 
 DVDLoader only saves on successful exit when changes were made (tracked via dvd.dirty). If the DVD was loaded from
-file (from_file=True), calling dvd.record_request raises CannotRecord to prevent accidental writes.
-
-### Transparent HTTPX integration (patcher)
-
-You can activate a DVD for the current process so that httpx.Client and httpx.AsyncClient transparently record or
-replay.
-
-```python
-import httpx
-from dvd_rw.loader import DVDLoader
-from dvd_rw.models import Matcher
-
-with DVDLoader(
-        file_path="/tmp/patcher-demo.dvd.json",
-        match_on=[Matcher.host, Matcher.method, Matcher.path, Matcher.query],
-        extra_matchers=[],
-) as dvd:
-    # In recording mode (no file yet): real requests are made and recorded
-    with httpx.Client() as client:
-        r = client.get("https://httpbin.org/get?x=1")
-        assert r.status_code == 200
-
-# Next run (file exists): replay mode, no network I/O; responses are returned from the recorded data.
-with DVDLoader(
-        file_path="/tmp/patcher-demo.dvd.json",
-        match_on=[Matcher.host, Matcher.method, Matcher.path, Matcher.query],
-        extra_matchers=[],
-) as dvd:
-    with httpx.Client() as client:
-        r = client.get("https://httpbin.org/get?x=1")
-        assert r.status_code == 200
-```
+file (from_file=True), calling dvd.record_request (i.e., encountering an unsaved request) raises CannotRecord to prevent
+accidental writes.
 
 Exception semantics: when recording, if an httpx request raises, the patcher records the exception class and message. On
 replay, the same exception type is reconstructed and raised (falling back to httpx.RequestError if constructor
@@ -140,14 +83,12 @@ signatures don’t match exactly). This is powered by RequestExceptionInfo in dv
 
 - Builtin matchers are both hashed (for indexing) and compared (for equality) using these features: host, method, path,
   query, headers, scheme.
-- You can customize match_on to include only what you need; fewer, stable features yield smaller keys and fewer index
-  buckets.
+- You can customize match_on to include only what you need; e.g., not matching on host
 - extra_matchers is a list of callables taking (recorded_request, incoming_request) and returning bool, applied after
-  the hash bucket filter.
+  the hash bucket filter. Use this to build your own matching logic not supported by the base matcher(s)
 - For high throughput:
-    - Keep match_on minimal but sufficient (e.g., avoid headers if not necessary).
-    - Prefer deterministic, immutable features; expensive computations will hurt performance.
-    - The index stores per-bucket lists of (list_index, Request, Response|ExceptionInfo) for lightweight scans.
+    - Use match on over extra matchers as much as possible. Generally, the more matchers you have,
+      the faster request lookup can run.
 
 ## Response selection semantics
 
@@ -155,32 +96,8 @@ DVD.get_response(request) returns the first matching response whose per-index _m
 recorded pair is therefore returned at most once by default. If you need cycling or multiple uses, adapt the logic or
 build a higher-level helper.
 
-To get exception replay behavior, use dvd.get_request(request), which either returns a Response, raises a reconstructed
-exception, or returns None when no match.
-
-## Serialization
-
-Pydantic v2 is used for JSON serialization: model_dump_json() and model_validate_json(). Response.body is bytes | None;
-it is encoded as base64 in JSON and decoded back to bytes on load.
-
 ## Running tests
 
 ```
 pytest -q
 ```
-
-Make sure to install dev dependencies first (see Installation).
-
-## Building distributions
-
-With uv:
-
-```
-uv build
-```
-
-Produces sdist and wheel under dist/.
-
-## License
-
-Apache-2.0 or similar (update as appropriate for your project).
