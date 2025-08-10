@@ -89,6 +89,7 @@ class DVDKwargs(TypedDict, total=False):
     match_on: list["Matcher"]
     extra_matchers: list[Callable[[Request, Request], bool]]
     before_record_request: NotRequired[Callable[[Request], Request | None] | None]
+    filter_headers: NotRequired[list[str]]
 
 
 class DVD:
@@ -116,6 +117,7 @@ class DVD:
         _match_on = kwargs.get("match_on")
         _extra_matchers = kwargs.get("extra_matchers")
         _before = kwargs.get("before_record_request")
+        _filter_headers = kwargs.get("filter_headers")
 
         self.match_on: list[Matcher] = (
             _match_on
@@ -132,6 +134,8 @@ class DVD:
         self.extra_matchers: list[Callable[[Request, Request], bool]] = (
             _extra_matchers or []
         )
+        # Normalize header names to lowercase for filtering; empty list by default
+        self.filter_headers: list[str] = [h.lower() for h in (_filter_headers or [])]
         # Hook to decide whether and how to record a request; not serialized
         self.before_record_request: Callable[[Request], Request | None] | None = _before
 
@@ -139,11 +143,23 @@ class DVD:
         self.rebuild_index()
 
     def _apply_before(self, request: Request) -> Request | None:
-        """Apply the before_record_request hook if present.
+        """Apply built-in filtering and the before_record_request hook if present.
+
+        - First, remove headers listed in self.filter_headers (case-insensitive).
+        - Then, apply the user-provided before_record_request hook if any.
 
         Returns possibly transformed Request, or None to indicate it should not be recorded.
         Errors in the hook will be treated as a signal to skip recording for safety.
         """
+        # Filter headers first (case-insensitive)
+        if self.filter_headers:
+            filtered = [
+                (k, v)
+                for (k, v) in request.headers
+                if k.lower() not in self.filter_headers
+            ]
+            request = Request(headers=filtered, method=request.method, url=request.url)
+        # Apply user hook if provided
         if self.before_record_request is None:
             return request
         try:
@@ -171,9 +187,15 @@ class DVD:
     def _records(
         self, request: Request
     ) -> Iterator[tuple[int, Response | RequestExceptionInfo]]:
-        hashed_key = self._get_request_key(request)
+        # Apply filtering and user hook to the incoming request for consistent matching
+        transformed = self._apply_before(request)
+        if transformed is None:
+            return
+        hashed_key = self._get_request_key(transformed)
         for index, rec_request, rec_value in self._hashed_requests[hashed_key]:
-            if all(matcher(rec_request, request) for matcher in self.extra_matchers):
+            if all(
+                matcher(rec_request, transformed) for matcher in self.extra_matchers
+            ):
                 yield index, rec_value
 
     def record_request(

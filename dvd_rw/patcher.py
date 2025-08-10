@@ -23,15 +23,21 @@ def _top_dvd() -> Optional[DVD]:
 def _to_dvd_request_from_httpx(request: httpx.Request) -> DVDRequest:
     # httpx.Request provides finalized method, url, and merged headers
     headers = list(request.headers.items())
-    return DVDRequest(headers=headers, method=str(request.method).upper(), url=str(request.url))
+    return DVDRequest(
+        headers=headers, method=str(request.method).upper(), url=str(request.url)
+    )
 
 
-def _to_httpx_response(dvd_response: DVDResponse, request: httpx.Request | None = None) -> httpx.Response:
+def _to_httpx_response(
+    dvd_response: DVDResponse, request: httpx.Request | None = None
+) -> httpx.Response:
     # Construct an httpx.Response from our stored data
     status_code = dvd_response.status
     headers = dvd_response.headers
     body = dvd_response.body or b""
-    return httpx.Response(status_code=status_code, headers=headers, content=body, request=request)
+    return httpx.Response(
+        status_code=status_code, headers=headers, content=body, request=request
+    )
 
 
 def _patch_if_needed():
@@ -90,17 +96,13 @@ def _patch_if_needed():
     ):  # type: ignore[no-redef]
         dvd = _top_dvd()
         if dvd is None:
-            return await _original_async_client_send(
-                self, request, *args, **kwargs
-            )  # type: ignore[misc]
+            return await _original_async_client_send(self, request, *args, **kwargs)  # type: ignore[misc]
 
         dvd_req = _to_dvd_request_from_httpx(request)
 
         # Global passthrough decision. If request is not recordable, always passthrough
         if not dvd.can_record(dvd_req):
-            return await _original_async_client_send(
-                self, request, *args, **kwargs
-            )  # type: ignore[misc]
+            return await _original_async_client_send(self, request, *args, **kwargs)  # type: ignore[misc]
 
         if dvd.from_file:
             dvd_res = dvd.get_request(dvd_req)

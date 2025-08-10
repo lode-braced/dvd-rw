@@ -165,9 +165,9 @@ def test_client_base_url_and_headers_recorded(tmp_path):
         # Exactly one recording
         assert len(dvd.recorded_requests) == 1
         recorded_req = dvd.recorded_requests[0][0]
-        assert (
-            recorded_req.url == f"{BASE_URL}/api/v1/items?x=1"
-        ), "URL should include base_url and relative path"
+        assert recorded_req.url == f"{BASE_URL}/api/v1/items?x=1", (
+            "URL should include base_url and relative path"
+        )
         # Ensure headers include client defaults and per-request header (case-insensitive check)
         headers_lower = {k.lower(): v for k, v in recorded_req.headers}
         assert headers_lower.get("x-client") == "yes"
