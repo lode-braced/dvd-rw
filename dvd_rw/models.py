@@ -2,10 +2,10 @@ import enum
 from collections import defaultdict
 from collections.abc import Hashable
 from functools import cached_property
-from typing import Callable, Dict, Iterator
+from typing import Callable, Dict, Iterator, TypedDict, NotRequired, Unpack
 from urllib.parse import urlparse, ParseResult, parse_qs
 
-from pydantic import BaseModel, Field, ImportString, Base64Bytes
+from pydantic import BaseModel, ImportString, Base64Bytes
 
 
 class Request(BaseModel):
@@ -85,28 +85,75 @@ class CannotRecord(Exception):
     pass
 
 
-class DVD(BaseModel):
-    recorded_requests: list[tuple[Request, Response | RequestExceptionInfo]]
+class DVDKwargs(TypedDict, total=False):
+    match_on: list["Matcher"]
+    extra_matchers: list[Callable[[Request, Request], bool]]
+    before_record_request: NotRequired[Callable[[Request], Request | None] | None]
 
-    # Match counts and indices for unified records (responses or exceptions)
-    _match_counts: dict[int, int] = defaultdict(int)
-    # Stores a request with its value (Response | RequestExceptionInfo) and their list index.
-    _hashed_requests: Dict[
-        Hashable, list[tuple[int, Request, Response | RequestExceptionInfo]]
-    ] = defaultdict(list)
 
-    from_file: bool
-    dirty: bool = Field(exclude=True, default=False)
+class DVD:
+    """Plain Python class managing recorded request/value pairs and fast lookups."""
 
-    match_on: list[Matcher] = [
-        Matcher.host,
-        Matcher.method,
-        Matcher.path,
-        Matcher.query,
-        Matcher.headers,
-        Matcher.scheme,
-    ]
-    extra_matchers: list[Callable[[Request, Request], bool]] = []
+    def __init__(
+        self,
+        recorded_requests: list[tuple[Request, Response | RequestExceptionInfo]] | None,
+        from_file: bool,
+        **kwargs: Unpack[DVDKwargs],
+    ) -> None:
+        self.recorded_requests: list[
+            tuple[Request, Response | RequestExceptionInfo]
+        ] = recorded_requests or []
+        # Match counts and indices for unified records (responses or exceptions)
+        self._match_counts: dict[int, int] = defaultdict(int)
+        # Stores a request with its value (Response | RequestExceptionInfo) and their list index.
+        self._hashed_requests: Dict[
+            Hashable, list[tuple[int, Request, Response | RequestExceptionInfo]]
+        ] = defaultdict(list)
+
+        self.from_file: bool = from_file
+        self.dirty: bool = False
+
+        _match_on = kwargs.get("match_on")
+        _extra_matchers = kwargs.get("extra_matchers")
+        _before = kwargs.get("before_record_request")
+
+        self.match_on: list[Matcher] = (
+            _match_on
+            if _match_on is not None
+            else [
+                Matcher.host,
+                Matcher.method,
+                Matcher.path,
+                Matcher.query,
+                Matcher.headers,
+                Matcher.scheme,
+            ]
+        )
+        self.extra_matchers: list[Callable[[Request, Request], bool]] = (
+            _extra_matchers or []
+        )
+        # Hook to decide whether and how to record a request; not serialized
+        self.before_record_request: Callable[[Request], Request | None] | None = _before
+
+        # Initialize index based on any provided records
+        self.rebuild_index()
+
+    def _apply_before(self, request: Request) -> Request | None:
+        """Apply the before_record_request hook if present.
+
+        Returns possibly transformed Request, or None to indicate it should not be recorded.
+        Errors in the hook will be treated as a signal to skip recording for safety.
+        """
+        if self.before_record_request is None:
+            return request
+        try:
+            return self.before_record_request(request)
+        except Exception:
+            return None
+
+    def can_record(self, request: Request) -> bool:
+        """Return True if this request should be recorded given the hook."""
+        return self._apply_before(request) is not None
 
     def rebuild_index(self) -> None:
         # Reset indices and rebuild from recorded_requests
@@ -131,17 +178,22 @@ class DVD(BaseModel):
 
     def record_request(
         self, request: Request, value: Response | RequestExceptionInfo | BaseException
-    ):
+    ) -> None:
         if self.from_file:
             raise CannotRecord("Cannot record requests when loaded from file.")
+        # Apply before_record_request hook to possibly transform or skip
+        transformed = self._apply_before(request)
+        if transformed is None:
+            # Skip recording silently; caller can decide behavior (e.g., just run request)
+            return
         if not isinstance(value, (Response, RequestExceptionInfo)):
             # Convert raw exception to serializable info
             value = RequestExceptionInfo.from_exception(value)
-        hashed_key = self._get_request_key(request)
+        hashed_key = self._get_request_key(transformed)
         self._hashed_requests[hashed_key].append(
-            (len(self.recorded_requests), request, value)
+            (len(self.recorded_requests), transformed, value)
         )
-        self.recorded_requests.append((request, value))
+        self.recorded_requests.append((transformed, value))
         self.dirty = True
 
     def get_response(self, request: Request) -> Response | None:

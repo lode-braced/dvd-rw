@@ -1,56 +1,55 @@
 import os.path
 from os import PathLike
-from typing import Callable
+from typing import Unpack
 
-from .models import DVD, Matcher, Request
+from pydantic import TypeAdapter
+
+from .models import DVD, Request, Response, RequestExceptionInfo, DVDKwargs
 from .patcher import push_dvd, pop_dvd
+
+
+_RECORDING_LOADER = TypeAdapter(list[tuple[Request, Response | RequestExceptionInfo]])
 
 
 class DVDLoader:
     def __init__(
         self,
         file_path: PathLike,
-        match_on: list[Matcher],
-        extra_matchers: list[Callable[[Request, Request], bool]],
+        **dvd_kwargs: Unpack[DVDKwargs],
     ):
         self.file_path = file_path
         self.dvd = None
-        self.match_on = match_on
-        self.extra_matchers = extra_matchers
+        # Build and store DVD kwargs in a single place for unified typing/usage
+        self._dvd_kwargs: DVDKwargs = dvd_kwargs
 
     def load(self):
         """
         Load a DVD instance, creating one from file or a new empty instance if the file does not exist (yet).
+        Uses Pydantic TypeAdapters to deserialize recorded request/value pairs.
         """
         if not os.path.isfile(self.file_path):
-            dvd_instance = DVD(
-                from_file=False,
-                match_on=self.match_on,
-                extra_matchers=self.extra_matchers,
-                recorded_requests=[],
-            )
+            # New/empty DVD
+            recorded = []
+            from_file = False
         else:
-            with open(self.file_path, "r") as f:
-                dvd_instance = DVD.model_validate_json(f.read())
-            # Override matchers from loader preferences
-            dvd_instance.match_on = self.match_on
-            dvd_instance.extra_matchers = self.extra_matchers
-            # Mark as from_file to enforce replay-only semantics on loaded DVDs
-            dvd_instance.from_file = True
-            # Rebuild index to enable fast lookups on loaded data
-            try:
-                dvd_instance.rebuild_index()
-            except AttributeError:
-                # older models may not have this method; ignore
-                pass
+            # Read bytes to support TypeAdapter.validate_json
+            with open(self.file_path, "rb") as f:
+                raw = f.read()
+            recorded = _RECORDING_LOADER.validate_json(raw)
+            from_file = True
+        dvd_instance = DVD(
+            recorded_requests=recorded, from_file=from_file, **self._dvd_kwargs
+        )  # type: ignore[arg-type]
         self.dvd = dvd_instance
 
     def save(self):
         """
-        Save the current DVD instance to file.
+        Save the current DVD instance to file using a TypeAdapter for the recorded pairs.
         """
-        with open(self.file_path, "w") as f:
-            f.write(self.dvd.model_dump_json())
+        ta = TypeAdapter(list[tuple[Request, Response | RequestExceptionInfo]])
+        json_bytes = ta.dump_json(self.dvd.recorded_requests)
+        with open(self.file_path, "wb") as f:
+            f.write(json_bytes)
 
     def __enter__(self):
         self.load()

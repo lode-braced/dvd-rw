@@ -64,6 +64,10 @@ def _patch_if_needed():
         headers = kwargs.get("headers")
         dvd_req = _to_dvd_request(method, url, headers)
 
+        # First: global passthrough decision. If request is not recordable, always passthrough
+        if not dvd.can_record(dvd_req):
+            return _original_client_request(self, method, url, *args, **kwargs)  # type: ignore[misc]
+
         if dvd.from_file:
             # Attempt to replay using unified API
             dvd_res = dvd.get_request(dvd_req)
@@ -105,6 +109,12 @@ def _patch_if_needed():
 
         headers = kwargs.get("headers")
         dvd_req = _to_dvd_request(method, url, headers)
+
+        # First: global passthrough decision. If request is not recordable, always passthrough
+        if not dvd.can_record(dvd_req):
+            return await _original_async_client_request(
+                self, method, url, *args, **kwargs
+            )  # type: ignore[misc]
 
         if dvd.from_file:
             dvd_res = dvd.get_request(dvd_req)
