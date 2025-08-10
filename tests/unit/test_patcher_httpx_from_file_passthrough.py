@@ -6,6 +6,7 @@ from dvd_rw.models import Matcher
 
 BASE_URL = "https://example.com"
 
+
 def make_url(path: str) -> str:
     return f"{BASE_URL}{path}"
 
@@ -37,6 +38,7 @@ def test_from_file_allows_passthrough_for_non_recordable(tmp_path):
     # Only '/replay' is considered recordable; others are non-recordable
     def before(req):
         from urllib.parse import urlparse
+
         p = urlparse(req.url).path
         if p in ("/replay", "/missing-recordable"):
             return req
@@ -47,8 +49,7 @@ def test_from_file_allows_passthrough_for_non_recordable(tmp_path):
         match_on=[Matcher.host, Matcher.method, Matcher.path],
         extra_matchers=[],
         before_record_request=before,
-    ) as dvd:
-
+    ):
         # 1) This should replay from the file and NOT hit the live transport
         def fail_handler(_request):  # pragma: no cover - should not be called
             raise AssertionError("Network should not be hit for '/replay'")

@@ -68,7 +68,7 @@ def test_missing_request_raises_in_replay(tmp_path):
         file_path=file_path,
         match_on=[Matcher.host, Matcher.method, Matcher.path],
         extra_matchers=[],
-    ) as dvd:
+    ):
         httpx.Client(transport=transport_record).get(make_url("/only-this"))
 
     # Now, in replay mode, calling a different URL should raise
