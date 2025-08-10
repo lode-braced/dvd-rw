@@ -6,12 +6,28 @@ dvd-rw aims to provide a vcrpy-like workflow with a focus on high scalability: e
 when recording/replaying thousands of requests. Core components use Pydantic v2 models for structured data and JSON
 serialization. A keyed index enables O(1)-ish replay lookups.
 
+## Quickstart
+
+```python
+from dvd_rw.loader import DVDLoader
+from dvd_rw.models import Matcher
+
+with DVDLoader(
+        file_path="/tmp/example.dvd.json",
+        match_on=[Matcher.host, Matcher.method, Matcher.path, Matcher.query],
+        extra_matchers=[],
+) as dvd:
+    # If the file did not exist yet, dvd.from_file will be False (recording allowed)
+    # On later runs when the file exists, dvd.from_file will be True (replay only)
+    # Do some requests here
+    ...
+```
 ## Why dvd-rw?
 
 If your use-case fits the request-replay features of the vcr(py), library, but you need faster performance,
 dvd-rw provides:
 
-- Fast lookups via a keyed index; only a small bucket is scanned per request
+- Fast lookups for requestsvia a keyed index; only a small bucket is scanned per request
 - Built in matchers (host, query, ...) are provided in a performance-optimized manner
 - DVD loading is optimized for speed by leveraging Pydantic where possible
 
@@ -31,7 +47,7 @@ Long-term, I want to keep performance as a main goal:
 - Reduce dvd file size when saved through compression, if this is possible in a performant manner
 - Move file IO into rust
 
-Feel free to open an issue for functionality that would make this library b
+Feel free to open an issue for functionality that would make this library better
 
 ## Installation
 
@@ -54,22 +70,7 @@ python -m pip install -e .
 python -m pip install pytest
 ```
 
-## Quickstart
-
-```python
-from dvd_rw.loader import DVDLoader
-from dvd_rw.models import Matcher
-
-with DVDLoader(
-        file_path="/tmp/example.dvd.json",
-        match_on=[Matcher.host, Matcher.method, Matcher.path, Matcher.query],
-        extra_matchers=[],
-) as dvd:
-    # If the file did not exist yet, dvd.from_file will be False (recording allowed)
-    # On subsequent runs when the file exists, dvd.from_file will be True (replay only)
-    # Do some requests here
-    ...
-```
+## Functionality
 
 DVDLoader only saves on successful exit when changes were made (tracked via dvd.dirty). If the DVD was loaded from
 file (from_file=True), calling dvd.record_request (i.e., encountering an unsaved request) raises CannotRecord to prevent
