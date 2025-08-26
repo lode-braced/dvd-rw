@@ -15,11 +15,11 @@ authors = [
 
 classifiers = [
     "Development Status :: 4 - Beta",
-    "License:: OSI Approved :: MIT License",
+    "License :: OSI Approved :: MIT License",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python",
-    "Topic:: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development :: Libraries :: Python Modules",
     "Typing :: Typed"
 ]
 
