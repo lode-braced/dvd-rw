@@ -19,5 +19,23 @@ jobs:
       - name: Run unit tests
         run: uv run pytest
 
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: pyproject.toml
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: 'auto'
+      - name: Install ruff
+        run: uv tool install ruff
+      - name: check formatting
+        run: ruff format --check dvd_rw tests
+      - name: lint code
+        run: ruff check dvd_rw tests
+
+
 
 
