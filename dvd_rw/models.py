@@ -2,7 +2,7 @@ import enum
 from collections import defaultdict
 from collections.abc import Hashable
 from functools import cached_property
-from typing import Callable, Dict, Iterator, TypedDict, NotRequired, Unpack
+from typing import Callable, Dict, Iterator, TypedDict, Unpack
 from urllib.parse import urlparse, ParseResult, parse_qs
 
 from pydantic import BaseModel, ImportString, Base64Bytes
@@ -88,12 +88,22 @@ class CannotRecord(Exception):
 class DVDKwargs(TypedDict, total=False):
     match_on: list["Matcher"]
     extra_matchers: list[Callable[[Request, Request], bool]]
-    before_record_request: NotRequired[Callable[[Request], Request | None] | None]
-    filter_headers: NotRequired[list[str]]
+    before_record_request: Callable[[Request], Request | None] | None
+    filter_headers: list[str]
+
+
+_default_match_on = [
+    Matcher.host,
+    Matcher.method,
+    Matcher.path,
+    Matcher.query,
+    Matcher.headers,
+    Matcher.scheme,
+]
 
 
 class DVD:
-    """Plain Python class managing recorded request/value pairs and fast lookups."""
+    """Class managing recorded request/value pairs and fast lookups."""
 
     def __init__(
         self,
@@ -114,28 +124,14 @@ class DVD:
         self.from_file: bool = from_file
         self.dirty: bool = False
 
-        _match_on = kwargs.get("match_on")
-        _extra_matchers = kwargs.get("extra_matchers")
+        self.match_on = kwargs.get("match_on", _default_match_on)
+        _extra_matchers = kwargs.get("extra_matchers", [])
         _before = kwargs.get("before_record_request")
-        _filter_headers = kwargs.get("filter_headers")
+        _filter_headers = kwargs.get("filter_headers", [])
 
-        self.match_on: list[Matcher] = (
-            _match_on
-            if _match_on is not None
-            else [
-                Matcher.host,
-                Matcher.method,
-                Matcher.path,
-                Matcher.query,
-                Matcher.headers,
-                Matcher.scheme,
-            ]
-        )
-        self.extra_matchers: list[Callable[[Request, Request], bool]] = (
-            _extra_matchers or []
-        )
+        self.extra_matchers: list[Callable[[Request, Request], bool]] = _extra_matchers
         # Normalize header names to lowercase for filtering; empty list by default
-        self.filter_headers: list[str] = [h.lower() for h in (_filter_headers or [])]
+        self.filter_headers: list[str] = [h.lower() for h in _filter_headers]
         # Hook to decide whether and how to record a request; not serialized
         self.before_record_request: Callable[[Request], Request | None] | None = _before
 
