@@ -5,7 +5,7 @@ from functools import cached_property
 from typing import Callable, Dict, Iterator, TypedDict, Unpack
 from urllib.parse import urlparse, ParseResult, parse_qs
 
-from pydantic import BaseModel, ImportString, Base64Bytes
+from pydantic import BaseModel, ImportString, field_validator, field_serializer
 
 
 class Request(BaseModel):
@@ -34,10 +34,41 @@ class Request(BaseModel):
         return self._url_parts.scheme
 
 
+import base64
+
+BODY_PREFIX = "b64_byte__"
+
+
 class Response(BaseModel):
     status: int
     headers: list[tuple[str, str]]
-    body: Base64Bytes | None
+    body: bytes | None
+
+    @field_validator("body", mode="before")
+    @classmethod
+    def _validate_body(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, (bytes, bytearray, memoryview)):
+            return bytes(v)
+        if isinstance(v, str):
+            if not v.startswith(BODY_PREFIX):
+                raise ValueError(
+                    "Response.body string must start with 'b64_byte__' prefix"
+                )
+            b64_part = v[len(BODY_PREFIX) :]
+            try:
+                return base64.b64decode(b64_part)
+            except Exception as e:
+                raise ValueError(f"Invalid base64 in Response.body: {e}")
+        raise TypeError("Response.body must be bytes|str|None")
+
+    @field_serializer("body", when_used="json")
+    def _serialize_body(self, v: bytes | None, _info):
+        if v is None:
+            return None
+        # Return a string with required prefix and b64 content
+        return BODY_PREFIX + base64.b64encode(v).decode("ascii")
 
 
 class RequestExceptionInfo(BaseModel):
@@ -89,6 +120,7 @@ class DVDKwargs(TypedDict, total=False):
     match_on: list["Matcher"]
     extra_matchers: list[Callable[[Request, Request], bool]]
     before_record_request: Callable[[Request], Request | None] | None
+    before_record_response: Callable[[Response], Response] | None
     filter_headers: list[str]
 
 
@@ -126,14 +158,19 @@ class DVD:
 
         self.match_on = kwargs.get("match_on", _default_match_on)
         _extra_matchers = kwargs.get("extra_matchers", [])
-        _before = kwargs.get("before_record_request")
+        _before_req = kwargs.get("before_record_request")
+        _before_res = kwargs.get("before_record_response")
         _filter_headers = kwargs.get("filter_headers", [])
 
         self.extra_matchers: list[Callable[[Request, Request], bool]] = _extra_matchers
         # Normalize header names to lowercase for filtering; empty list by default
         self.filter_headers: list[str] = [h.lower() for h in _filter_headers]
-        # Hook to decide whether and how to record a request; not serialized
-        self.before_record_request: Callable[[Request], Request | None] | None = _before
+        # Hook to decide whether and how to record a request.
+        self.before_record_request: Callable[[Request], Request | None] | None = (
+            _before_req
+        )
+        # Hook to transform response before recording.
+        self.before_record_response: Callable[[Response], Response] | None = _before_res
 
         # Initialize index based on any provided records
         self.rebuild_index()
@@ -207,6 +244,9 @@ class DVD:
         if not isinstance(value, (Response, RequestExceptionInfo)):
             # Convert raw exception to serializable info
             value = RequestExceptionInfo.from_exception(value)
+        # Apply before_record_response hook if provided and the value is a Response
+        if isinstance(value, Response) and self.before_record_response is not None:
+            value = self.before_record_response(value)
         hashed_key = self._get_request_key(transformed)
         self._hashed_requests[hashed_key].append(
             (len(self.recorded_requests), transformed, value)

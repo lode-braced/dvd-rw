@@ -161,7 +161,7 @@ def test_gzip_header_with_plain_body_replay(tmp_path):
                 ("Content-Encoding", "gzip"),
                 ("Content-Type", "text/plain"),
             ],
-            body=__import__("pydantic").Base64Encoder.encode(b"hello"),
+            body=b"hello",
         )
         dvd.recorded_requests.append((req, res))
         dvd.rebuild_index()

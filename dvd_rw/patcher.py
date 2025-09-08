@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import List, Optional
 
 import httpx
-from pydantic import Base64Encoder
 
 from .models import DVD, Request as DVDRequest, Response as DVDResponse
 
@@ -101,7 +100,7 @@ def _patch_if_needed():
             dvd_res = DVDResponse(
                 status=response.status_code,
                 headers=list(response.headers.items()),
-                body=Base64Encoder.encode(response.content),
+                body=response.content,
             )
             dvd.record_request(dvd_req, dvd_res)
             return response
@@ -142,7 +141,7 @@ def _patch_if_needed():
             dvd_res = DVDResponse(
                 status=response.status_code,
                 headers=list(response.headers.items()),
-                body=Base64Encoder.encode(response.content),
+                body=response.content,
             )
             dvd.record_request(dvd_req, dvd_res)
             return response

@@ -1,12 +1,8 @@
-from pydantic import Base64Encoder
-
 from dvd_rw.models import DVD, Request, Response, Matcher
 
 
 def _resp(body: bytes = b"ok", status: int = 200):
-    return Response(
-        status=status, headers=[("X-Other", "1")], body=Base64Encoder.encode(body)
-    )
+    return Response(status=status, headers=[("X-Other", "1")], body=body)
 
 
 def test_filter_headers_strips_on_record_and_matches_case_insensitive():
