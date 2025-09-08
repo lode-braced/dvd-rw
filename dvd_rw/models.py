@@ -7,6 +7,8 @@ from urllib.parse import urlparse, ParseResult, parse_qs
 
 from pydantic import BaseModel, ImportString, field_validator, field_serializer
 
+import base64
+
 
 class Request(BaseModel):
     headers: list[tuple[str, str]]
@@ -33,8 +35,6 @@ class Request(BaseModel):
     def scheme(self) -> str:
         return self._url_parts.scheme
 
-
-import base64
 
 BODY_PREFIX = "b64_byte__"
 
